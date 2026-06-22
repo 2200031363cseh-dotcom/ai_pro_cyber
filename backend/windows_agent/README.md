@@ -13,10 +13,19 @@ The companion to the GHOST web app — runs on **your** Windows PC and lets Clau
 * 🎙 **Voice in** — type `v`, speak, it auto-stops on silence (Whisper STT)
 * 🔊 **Voice out** — replies are spoken back (OpenAI TTS, 9 voices)
 * 🧠 **Brain** — Claude Sonnet 4.5 with tool-use loop
-* ✋ **Hands** — open apps, search/move/copy/delete files (confirmed),
+* ✋ **Hands** — open apps / URLs, search/move/copy/delete files (confirmed),
   take screenshots, run guarded PowerShell, calculate, get the time
+* 🛡 **Bug-bounty pack** — scope-gated recon for **authorised testing only**:
+  `scope_confirm`, `passive_recon` (subdomain enum via crt.sh + DNS),
+  `tech_fingerprint`, `security_headers`, `misconfig_sweep` (~40 known paths),
+  `port_scan` (top 100 TCP), `draft_report` (HackerOne-style markdown).
 * 👁 **Eyes** (opt-in) — `computer_use.py` lets Claude see + click + type in any
   app. Sandbox VM only.
+
+> ⚠ The bug-bounty skills require you to explicitly confirm scope before any
+> active probe runs. Use them only on programs that have authorised you to
+> test (HackerOne, Bugcrowd, Intigriti, YesWeHack, etc.). Unauthorised scanning
+> is a crime in most countries.
 
 ---
 
