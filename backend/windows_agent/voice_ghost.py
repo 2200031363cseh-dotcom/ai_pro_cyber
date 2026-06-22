@@ -49,9 +49,16 @@ USE_EMERGENT = bool(EMERGENT_KEY) and not (
 )
 
 if USE_EMERGENT:
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
-    from emergentintegrations.llm.openai.speech_to_text import OpenAISpeechToText
-    from emergentintegrations.llm.openai.text_to_speech import OpenAITextToSpeech
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        from emergentintegrations.llm.openai.speech_to_text import OpenAISpeechToText
+        from emergentintegrations.llm.openai.text_to_speech import OpenAITextToSpeech
+    except ImportError:
+        print("ERROR: emergentintegrations is not installed.")
+        print("Two options:")
+        print(" 1) Install it:  pip install --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ emergentintegrations")
+        print(" 2) OR edit .env: comment out EMERGENT_LLM_KEY and fill in ANTHROPIC_API_KEY + OPENAI_API_KEY")
+        sys.exit(1)
     stt_client = OpenAISpeechToText(api_key=EMERGENT_KEY)
     tts_client = OpenAITextToSpeech(api_key=EMERGENT_KEY)
     anthropic_client = None

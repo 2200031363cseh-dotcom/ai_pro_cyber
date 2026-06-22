@@ -59,29 +59,46 @@ You should now see a folder containing `setup.bat`, `voice_ghost.py`,
 It will automatically:
 
 1. Create a Python virtualenv inside `.venv\`
-2. Install all dependencies (anthropic, openai, sounddevice, pyautogui, …)
-3. Copy `.env.example` → `.env`
-4. Open `.env` in Notepad for you to review
+2. Install the core dependencies (anthropic, openai, sounddevice, pyautogui, …)
+3. Install the optional **Emergent integration** from a private mirror
+   (if this fails, you can still use the agent with your own Anthropic + OpenAI keys)
+4. Copy `.env.example` → `.env` and open it in Notepad
 
 > Installation takes ~2 minutes the first time. Leave the PowerShell window
-> open until you see "IMPORTANT: open .env and replace placeholder keys".
+> open until you see "=== Setup complete ===".
+
+### What if I see `ERROR: No matching distribution found for emergentintegrations`?
+
+That means the private mirror was unreachable from your network. No problem —
+the agent will still work with your own keys:
+
+1. Open `.env` (Notepad will open it automatically), comment out the
+   `EMERGENT_LLM_KEY` line with a `#`, and fill in your **own** keys:
+   ```env
+   # EMERGENT_LLM_KEY=...
+   ANTHROPIC_API_KEY=sk-ant-...
+   OPENAI_API_KEY=sk-...
+   ```
+2. Save and close Notepad. Continue to STEP 5.
 
 ### Manual alternative (if `setup.bat` won't run)
 
 If your PC blocks .bat files, open PowerShell **in the agent folder** (Shift +
-right-click in the folder → "Open PowerShell window here") and run these one at
-a time:
+right-click in the folder → "Open PowerShell window here") and run these one
+at a time:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-core.txt
+# Optional — only needed if you plan to use the EMERGENT_LLM_KEY option:
+python -m pip install --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ emergentintegrations
 copy .env.example .env
 notepad .env
 ```
 
-> If PowerShell complains about *"running scripts is disabled"*, run this once:
+> If PowerShell complains *"running scripts is disabled"*, run this once:
 > `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`,
 > answer **Y**, then re-run the activate line.
 
