@@ -45,7 +45,13 @@ The user provided their own Anthropic API key but the key had a **zero credit ba
   - Three-column layout: SkillsPanel + MemoryPanel (left) · ChatStream + VoiceVisualizer + ChatInput (center) · SettingsPanel + DownloadCard + Session info (right).
   - Push-to-talk mic, live status HUD (idle / listening / thinking / speaking) with pulse rings, rotating dashed ring, wave bars, blinking cursor.
   - Tool calls render inline as terminal-style tags inside the assistant message.
-- **Windows agent** (`/app/backend/windows_agent/`): `ghost.py` CLI, `skills/__init__.py` with `open_app`, `search_files`, `file_action` (move/copy/delete/list, confirmed), `screenshot`, `run_powershell` (confirmed), plus `computer_use.py` for Phase 3.
+- **Windows desktop agent** (`/app/backend/windows_agent/`):
+  - `voice_ghost.py` — full voice loop: mic in (sounddevice + silence VAD) → Whisper → Claude tool loop → OpenAI TTS → speaker out.
+  - `ghost.py` — text-only fallback.
+  - `skills/__init__.py` — real `open_app`, `search_files`, `file_action` (move/copy/delete confirmed), `screenshot`, `run_powershell` (confirmed).
+  - `computer_use.py` — Phase 3 screen control (opt-in, sandboxed VM only).
+  - One-click installers: `setup.bat`, `run_voice.bat`, `run_text.bat`.
+  - Dual auth: EMERGENT_LLM_KEY OR (ANTHROPIC_API_KEY + OPENAI_API_KEY).
 - **Tests**: 17/17 backend pytest cases passing (iteration_1).
 
 ## Prioritized backlog

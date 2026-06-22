@@ -41,9 +41,12 @@ export default function DownloadCard({ apiBase }) {
         </motion.a>
 
         <p className="text-[10px] text-white/30 font-mono leading-relaxed">
-          unzip · <span className="text-white/50">cd ghost-windows-agent</span> · pip install -r requirements.txt · python ghost.py
+          unzip → double-click <span className="text-white/60">setup.bat</span> → edit <span className="text-white/60">.env</span> → run <span className="text-white/60">run_voice.bat</span>
         </p>
       </div>
     </div>
+  );
+}
+iv>
   );
 }
