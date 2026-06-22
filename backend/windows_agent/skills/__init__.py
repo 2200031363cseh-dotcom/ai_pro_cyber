@@ -9,8 +9,10 @@ import datetime as _dt
 import json
 import math
 import os
+import re
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 # ---- safety helpers ----
@@ -76,19 +78,92 @@ def calculate(expression: str) -> dict:
 
 
 def open_app(app_name: str) -> dict:
-    """Open an app via Windows Start-Process (cross-platform fallback to subprocess)."""
+    """Open an app, URL, or known web service.
+
+    Resolution order:
+      1. If it's already a URL (http://, https://) -> open in default browser.
+      2. If it's a known web shortcut (github, gmail, youtube, …) -> open the canonical URL.
+      3. If it looks like a domain (contains a dot, no spaces) -> open https://<name>.
+      4. Otherwise try to launch it as a Windows app via Start-Process. If that
+         fails, fall back to a Google search for the name in the browser.
+    """
+    name = (app_name or "").strip()
+    if not name:
+        return {"error": "no app name given"}
+
+    # Known web service shortcuts (lowercase keys).
+    web_shortcuts = {
+        "github": "https://github.com",
+        "gmail": "https://mail.google.com",
+        "google": "https://google.com",
+        "youtube": "https://youtube.com",
+        "twitter": "https://twitter.com",
+        "x": "https://x.com",
+        "linkedin": "https://linkedin.com",
+        "reddit": "https://reddit.com",
+        "chatgpt": "https://chat.openai.com",
+        "claude": "https://claude.ai",
+        "stackoverflow": "https://stackoverflow.com",
+        "wikipedia": "https://wikipedia.org",
+        "amazon": "https://amazon.com",
+        "netflix": "https://netflix.com",
+        "spotify-web": "https://open.spotify.com",
+        "drive": "https://drive.google.com",
+        "calendar": "https://calendar.google.com",
+        "maps": "https://maps.google.com",
+        "whatsapp": "https://web.whatsapp.com",
+        "discord-web": "https://discord.com/app",
+        "notion": "https://notion.so",
+        "figma": "https://figma.com",
+    }
+
+    lower = name.lower()
+    # 1. Direct URL
+    if lower.startswith(("http://", "https://")):
+        webbrowser.open(name)
+        return {"status": "opened_url", "url": name}
+
+    # 2. Known shortcut
+    if lower in web_shortcuts:
+        url = web_shortcuts[lower]
+        webbrowser.open(url)
+        return {"status": "opened_url", "url": url, "matched_shortcut": lower}
+
+    # 3. Looks like a domain (has a dot, no spaces, no slashes)
+    if re.fullmatch(r"[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+", name):
+        url = f"https://{name}"
+        webbrowser.open(url)
+        return {"status": "opened_url", "url": url}
+
+    # 4. Try as an installed Windows app
     if sys.platform == "win32":
         try:
-            subprocess.Popen(["powershell", "-NoProfile", "-Command", f"Start-Process '{app_name}'"])
-            return {"status": "launched", "app": app_name}
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", f"Start-Process '{name}'"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0:
+                return {"status": "launched", "app": name}
+            # Failed -> fall back to a web search
+            url = f"https://www.google.com/search?q={name.replace(' ', '+')}"
+            webbrowser.open(url)
+            return {
+                "status": "app_not_found_searched_web_instead",
+                "tried": name,
+                "powershell_error": (r.stderr or "").strip()[:300],
+                "fallback_url": url,
+            }
         except Exception as e:
             return {"error": str(e)}
-    # non-Windows fallback (for dev/testing)
+
+    # non-Windows dev fallback
     try:
-        subprocess.Popen([app_name])
-        return {"status": "launched", "app": app_name, "note": "non-Windows fallback"}
+        subprocess.Popen([name])
+        return {"status": "launched", "app": name, "note": "non-Windows fallback"}
     except FileNotFoundError:
-        return {"error": f"app not found: {app_name}"}
+        url = f"https://www.google.com/search?q={name.replace(' ', '+')}"
+        webbrowser.open(url)
+        return {"status": "app_not_found_searched_web_instead", "fallback_url": url}
 
 
 def search_files(query: str, root: str | None = None, limit: int = 25) -> dict:
@@ -185,7 +260,15 @@ ALL_TOOLS = [
     },
     {
         "name": "open_app",
-        "description": "Open an application by name (e.g. 'notepad', 'chrome', 'Spotify').",
+        "description": (
+            "Open an application, website, or URL. Handles: full URLs "
+            "(https://...), known web services by name (github, gmail, youtube, "
+            "twitter, chatgpt, claude, notion, figma, drive, calendar, maps, "
+            "whatsapp, reddit, stackoverflow, etc.), bare domains (example.com), "
+            "AND installed Windows apps (notepad, chrome, spotify). If the app "
+            "isn't installed, falls back to a web search. Use this for ANY "
+            "'open X' or 'launch X' request — web or native."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {"app_name": {"type": "string"}},
