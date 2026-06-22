@@ -1,0 +1,35 @@
+{
+  "summary": "Backend-only regression suite for GHOST personal AI assistant. 17/17 pytest cases passed in ~28s against the public REACT_APP_BACKEND_URL. Validated service info (claude-sonnet-4-5 online), /api/skills listing all 7 tools, full Claude tool-use loop (get_current_time, calculate=391, remember_fact + cross-turn recall_facts via shared session_id), conversation persistence + flattened GET with no empty user frames, memory CRUD (add/list/delete + empty-rejection), conversation delete, TTS base64 audio output, Windows agent zip download containing required files, and per-call enabled_tools filter (only calculate honored). Voice STT endpoint was skipped per request.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "skills.calculate uses eval() with a sanitized regex + restricted globals. The character whitelist still allows arbitrary alphanumeric tokens, so attribute access via getattr-style names is blocked, but identifiers like '__import__' would fail the regex because of underscores… actually underscores ARE whitelisted ([_]) so 'a_b' passes. The math-only env + __builtins__={} mitigates this in practice, but consider switching to ast.parse + a whitelisted-node evaluator for stricter safety.",
+    "/api/chat/voice uses synchronous os.remove inside the request handler before awaiting STT — minor; STT is awaited after the temp file is closed, so OK, but consider streaming the upload through a context-manager helper to avoid leaking temp files on STT exception.",
+    "_chat_with_tools loops up to 8 tool rounds with no per-call timeout; a misbehaving tool (e.g., web_search to a slow host) could stall a request beyond a client's timeout. Consider wrapping execute_tool in asyncio.to_thread with timeout.",
+    "skills.web_search performs blocking urllib.request inside an async pathway via execute_tool dispatched synchronously from the chat handler — fine because dispatch is sync, but consider httpx.AsyncClient for parity with the rest of the async stack.",
+    "TOOL_DEFINITIONS is module-level mutable list shared across requests; _filter_tools returns a reference to it when no filter is supplied. Not an issue today, but if any future code mutates the returned list it would leak globally — return a copy."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/__init__.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "No auth on this app — endpoints are open. /app/memory/test_credentials.md not required.",
+  "seed_data_creation": "Tests are self-contained: each run pre-clears /api/memory/facts, creates a fresh session_id per shared-flow run, and cleans up its own conversation/memory at the end. No persistent seed data left behind.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Suite lives at /app/backend/tests/backend_test.py and is fully idempotent. It clears facts at start and end, and deletes the shared session at the end. LLM_TIMEOUT=120s is set because tool-loop turns can take ~10-20s each; do not lower below 60s. The 'recall' test asserts assistant_text contains 'astronom' rather than requiring the recall_facts tool to fire, because Claude often answers from in-session history without re-calling the tool — that's acceptable behavior per the product spec. /api/chat/voice was intentionally skipped (no webm sample); TTS coverage via /api/chat/tts is sufficient.",
+  "rca of the issue": "N/A — no failures observed. All 17 endpoints + tool-loop assertions passed cleanly."
+}
