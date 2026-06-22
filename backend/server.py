@@ -214,6 +214,9 @@ async def chat(req: ChatRequest):
     facts = await _load_facts()
     memory = _MemoryProxy(facts)
 
+    final_text: str = ""
+    tool_calls: list[dict] = []
+    new_history: list[dict] = []
     try:
         final_text, tool_calls, new_history = await _chat_with_tools(
             req.session_id, req.message, req.enabled_tools, memory, prior

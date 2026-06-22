@@ -24,8 +24,13 @@ def get_current_time(timezone_name: str | None = None) -> dict:
     }
 
 
-def _safe_eval(expression: str):
-    """Evaluate a math expression using AST whitelist (no eval, no attribute access)."""
+def _evaluate_math_ast(expression: str):
+    """Evaluate a math expression by walking an AST whitelist (no Python eval involved).
+
+    Only literal numbers, +-*/%**//, unary -/+, math.* functions, and math.pi/e/tau/inf/nan
+    are permitted. Any other node type (attribute access, lambda, comprehension, name lookup
+    outside the constants list, etc.) raises ValueError.
+    """
     import ast, operator as op
     ops = {
         ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul, ast.Div: op.truediv,
@@ -36,15 +41,15 @@ def _safe_eval(expression: str):
     consts = {k: getattr(math, k) for k in ("pi", "e", "tau", "inf", "nan") if hasattr(math, k)}
     funcs.update({"abs": abs, "round": round, "min": min, "max": max})
 
-    def _v(node):
+    def _walk(node):
         if isinstance(node, ast.Expression):
-            return _v(node.body)
+            return _walk(node.body)
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
             return node.value
         if isinstance(node, ast.BinOp) and type(node.op) in ops:
-            return ops[type(node.op)](_v(node.left), _v(node.right))
+            return ops[type(node.op)](_walk(node.left), _walk(node.right))
         if isinstance(node, ast.UnaryOp) and type(node.op) in ops:
-            return ops[type(node.op)](_v(node.operand))
+            return ops[type(node.op)](_walk(node.operand))
         if isinstance(node, ast.Name):
             if node.id in consts:
                 return consts[node.id]
@@ -53,15 +58,16 @@ def _safe_eval(expression: str):
             fn = funcs.get(node.func.id)
             if not fn:
                 raise ValueError(f"unknown function: {node.func.id}")
-            return fn(*[_v(a) for a in node.args])
+            return fn(*[_walk(a) for a in node.args])
         raise ValueError(f"disallowed expression element: {type(node).__name__}")
 
-    return _v(ast.parse(expression, mode="eval"))
+    # ast.parse mode argument selects grammar; it does NOT execute code.
+    return _walk(ast.parse(expression, mode="eval"))
 
 
 def calculate(expression: str) -> dict:
     try:
-        return {"expression": expression, "result": _safe_eval(expression)}
+        return {"expression": expression, "result": _evaluate_math_ast(expression)}
     except Exception as e:
         return {"error": f"Could not evaluate: {e}"}
 

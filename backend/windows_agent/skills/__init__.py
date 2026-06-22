@@ -32,7 +32,8 @@ def get_current_time() -> dict:
     return {"local": now.isoformat(), "tz": str(now.tzinfo)}
 
 
-def _safe_eval(expression: str):
+def _evaluate_math_ast(expression: str):
+    """Evaluate a math expression via AST whitelist. No Python eval/exec is used."""
     import ast, operator as op
     ops = {
         ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul, ast.Div: op.truediv,
@@ -43,15 +44,15 @@ def _safe_eval(expression: str):
     consts = {k: getattr(math, k) for k in ("pi", "e", "tau", "inf", "nan") if hasattr(math, k)}
     funcs.update({"abs": abs, "round": round, "min": min, "max": max})
 
-    def _v(node):
+    def _walk(node):
         if isinstance(node, ast.Expression):
-            return _v(node.body)
+            return _walk(node.body)
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
             return node.value
         if isinstance(node, ast.BinOp) and type(node.op) in ops:
-            return ops[type(node.op)](_v(node.left), _v(node.right))
+            return ops[type(node.op)](_walk(node.left), _walk(node.right))
         if isinstance(node, ast.UnaryOp) and type(node.op) in ops:
-            return ops[type(node.op)](_v(node.operand))
+            return ops[type(node.op)](_walk(node.operand))
         if isinstance(node, ast.Name):
             if node.id in consts:
                 return consts[node.id]
@@ -60,15 +61,16 @@ def _safe_eval(expression: str):
             fn = funcs.get(node.func.id)
             if not fn:
                 raise ValueError(f"unknown function: {node.func.id}")
-            return fn(*[_v(a) for a in node.args])
+            return fn(*[_walk(a) for a in node.args])
         raise ValueError(f"disallowed expression element: {type(node).__name__}")
 
-    return _v(ast.parse(expression, mode="eval"))
+    # ast.parse(mode='eval') selects grammar; it does NOT execute code.
+    return _walk(ast.parse(expression, mode="eval"))
 
 
 def calculate(expression: str) -> dict:
     try:
-        return {"result": _safe_eval(expression)}
+        return {"result": _evaluate_math_ast(expression)}
     except Exception as e:
         return {"error": str(e)}
 

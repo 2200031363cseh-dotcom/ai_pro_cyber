@@ -75,7 +75,7 @@ export default function ChatStream({ messages, isThinking }) {
                 {m.tool_calls && m.tool_calls.length > 0 && (
                   <div className="mb-1">
                     {m.tool_calls.map((tc, i) => (
-                      <ToolTag key={i} name={tc.name} input={tc.input} result={tc.result} />
+                      <ToolTag key={`${tc.name}-${i}-${JSON.stringify(tc.input || {})}`} name={tc.name} input={tc.input} result={tc.result} />
                     ))}
                   </div>
                 )}
