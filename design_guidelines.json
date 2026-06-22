@@ -1,0 +1,164 @@
+{
+  "theme_and_archetype": {
+    "domain": "AI Assistant Web App (Hybrid Fullstack)",
+    "theme": "Dark",
+    "archetype": "Archetype 4 (Swiss/High-Contrast) crossed with Retro-Futurism",
+    "description": "GHOST is a high-end 'Haunted Terminal'. It rejects cliché Matrix-green for a sleek, premium hacker aesthetic using deep void black, ghostly bone white, and pale phosphor cyan. It emphasizes readability, generous spacing, and crystal-clear hierarchy over cramped authentic terminal simulation.",
+    "emotional_tone": "Intelligent, mysterious, quiet power, sleek."
+  },
+  "color_palette": {
+    "background": {
+      "hex": "#050508",
+      "tailwind": "bg-[#050508]",
+      "description": "Deepest void black with a microscopic hint of cool blue/purple."
+    },
+    "surface": {
+      "hex": "#0B0C10",
+      "tailwind": "bg-[#0B0C10]/80",
+      "description": "Used with backdrop-blur-2xl to create ghostly translucent panels."
+    },
+    "primary": {
+      "hex": "#8BE9FD",
+      "tailwind": "text-[#8BE9FD]",
+      "description": "Pale Phosphor Cyan. Used sparingly for active states, tool execution highlights, and the primary 'Ghost' accent."
+    },
+    "secondary": {
+      "hex": "#F8F9FA",
+      "tailwind": "text-[#F8F9FA]",
+      "description": "Ghost Bone White. Used for primary typography to avoid the harshness of pure #FFFFFF."
+    },
+    "accent": {
+      "hex": "#B388FF",
+      "tailwind": "text-[#B388FF]",
+      "description": "Ethereal Lavender. Used for the 'thinking' state or secondary accents."
+    },
+    "muted": {
+      "hex": "#44475A",
+      "tailwind": "text-[#44475A]",
+      "description": "Dark Slate for inactive elements, timestamps, and borders."
+    },
+    "border": {
+      "hex": "#1E1F29",
+      "tailwind": "border-[#1E1F29] or border-white/5",
+      "description": "Ultra-subtle borders to separate bento grid panels."
+    }
+  },
+  "typography": {
+    "font_imports": [
+      "@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');",
+      "@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap');"
+    ],
+    "heading_font": {
+      "family": "'Space Mono', monospace",
+      "usage": "Headings, massive feature numbers, 'GHOST' logo.",
+      "weight": "700",
+      "tracking": "tracking-tight"
+    },
+    "body_font": {
+      "family": "'JetBrains Mono', monospace",
+      "usage": "Chat transcript, UI labels, tool logs.",
+      "weight": "400 to 500"
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl font-bold tracking-tighter text-[#F8F9FA] font-['Space_Mono']",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight text-[#F8F9FA] font-['Space_Mono']",
+      "h3": "text-xl sm:text-2xl font-bold text-[#F8F9FA] font-['Space_Mono']",
+      "body": "text-base leading-relaxed text-[#F8F9FA]/80 font-['JetBrains_Mono']",
+      "small": "text-xs tracking-[0.2em] uppercase text-[#8BE9FD] font-['Space_Mono']"
+    }
+  },
+  "spacing_and_layout": {
+    "strategy": "The 'Control Room' Grid",
+    "container": "h-screen w-full overflow-hidden flex flex-col md:flex-row bg-[#050508] text-[#F8F9FA] p-4 md:p-6 gap-6",
+    "grid_system": {
+      "sidebar": "w-full md:w-64 lg:w-80 flex-shrink-0 flex flex-col gap-6",
+      "main_chat": "flex-1 flex flex-col min-w-0 border border-white/5 rounded-2xl bg-[#0B0C10]/50 backdrop-blur-xl relative",
+      "right_panel": "w-full md:w-80 lg:w-96 flex-shrink-0 flex flex-col gap-6 overflow-y-auto"
+    },
+    "padding": "Generous. Panels should have p-6 or p-8 internal padding. Do not cramp text.",
+    "border_radius": "rounded-2xl for major panels, rounded-md for inner elements like tool tags."
+  },
+  "surfaces_and_micro_themes": {
+    "glassmorphism": "All main panels must use bg-black/40 to bg-[#0B0C10]/80 with backdrop-blur-xl and a 1px border-white/5. This creates the 'Ghostly' translucency.",
+    "glow_effects": "Active elements (like the voice visualizer or active tool) should have a subtle drop-shadow-[0_0_12px_rgba(139,233,253,0.3)].",
+    "scrollbars": "MUST be custom. 1px width, transparent track, hover thumb color #44475A. Hidden entirely when not hovering."
+  },
+  "components": {
+    "voice_visualizer": {
+      "description": "A central or top-anchored HUD element in the chat showing current status.",
+      "states": {
+        "idle": "Dimmed #44475A single pulse.",
+        "listening": "Fast pulsing #8BE9FD rings using Framer Motion.",
+        "thinking": "Rotating dashed ring in #B388FF.",
+        "speaking": "Audio waveform bars expanding/contracting."
+      },
+      "testid": "voice-visualizer-hud"
+    },
+    "chat_transcript": {
+      "description": "The main terminal stream. Messages appear from the bottom.",
+      "user_message": "Right-aligned, bg-white/5, text-white, rounded-2xl rounded-br-sm p-4 max-w-[80%].",
+      "ai_message": "Left-aligned, transparent bg, text-white/90, pl-4 border-l-2 border-[#8BE9FD]/50 max-w-[90%].",
+      "tool_call_inline": "Renders like a terminal log inside the AI message stream: '> GHOST.skill_invoked({name: \"search_files\"})' in text-xs text-[#8BE9FD] font-mono mt-2 mb-2 bg-[#8BE9FD]/10 p-2 rounded-md.",
+      "testid": "chat-transcript-stream"
+    },
+    "skills_panel": {
+      "description": "List of available skills (open_app, search_files, web_search).",
+      "style": "Bento list. Each item has a Phosphor Icon, Title, and a Shadcn Switch.",
+      "switch_customization": "Override default Shadcn switch to use #8BE9FD when checked, #44475A when unchecked.",
+      "testid": "skills-toggle-panel"
+    },
+    "memory_panel": {
+      "description": "Displays stored facts/preferences.",
+      "style": "Grid of small tags or a running terminal log of 'learned facts'. text-xs text-[#F8F9FA]/60.",
+      "testid": "memory-facts-panel"
+    },
+    "windows_agent_card": {
+      "description": "Clean card for downloading the local PC automation starter.",
+      "background_image": "https://images.pexels.com/photos/28901526/pexels-photo-28901526.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "style": "Relative container, image as absolute inset-0 object-cover opacity-20. Dark gradient overlay. Big 'Download Agent' CTA button with 'The Tracing Beam' or glowing border effect.",
+      "testid": "download-agent-card"
+    },
+    "settings_panel": {
+      "description": "Model selection and toggles.",
+      "style": "Use Shadcn Select and Switch components. Dark theme overrides.",
+      "testid": "settings-configuration-panel"
+    }
+  },
+  "icons_and_assets": {
+    "library": "@phosphor-icons/react",
+    "weight": "duotone",
+    "installation": "yarn add @phosphor-icons/react",
+    "usage": "Use icons for every tool (e.g., Folder for search_files, Globe for web_search, Desktop for open_app)."
+  },
+  "motion_and_interaction": {
+    "library": "framer-motion",
+    "installation": "yarn add framer-motion",
+    "hover_states": "Buttons lift slightly -translate-y-0.5, border changes to border-[#8BE9FD]/50.",
+    "page_load": "Staggered fade-in of panels (Sidebar -> Chat -> Right Panel).",
+    "new_message": "Animate layout, slide up with opacity 0 to 1."
+  },
+  "media_and_images": {
+    "hero_abstract": {
+      "url": "https://images.pexels.com/photos/28901526/pexels-photo-28901526.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Neon digital polygon glowing in dark space. Use as background for the Windows Agent download card with heavy bg-black/80 overlay."
+    },
+    "code_terminal_bg": {
+      "url": "https://images.unsplash.com/photo-1759661881353-5b9cc55e1cf4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2Mzl8MHwxfHNlYXJjaHwyfHxtaW5pbWFsaXN0JTIwY29kaW5nJTIwZGFyayUyMHRlcm1pbmFsfGVufDB8fHx8MTc4MjA1NDgwNnww&ixlib=rb-4.1.0&q=85",
+      "description": "Computer screen displaying lines of code. Use as a very subtle (opacity-5) full-page background texture if plain black is too flat."
+    }
+  },
+  "accessibility_and_testing": {
+    "contrast": "Ensure text-[#F8F9FA] against bg-[#0B0C10] meets APCA standards. Tool-call cyan text must use #8BE9FD which has sufficient contrast against dark backgrounds.",
+    "data_testid_rules": "ALL interactive elements MUST include data-testid. Examples: data-testid='voice-toggle-btn', data-testid='model-select-dropdown', data-testid='skill-toggle-[skill_name]'."
+  },
+  "instructions_to_main_agent": [
+    "Install framer-motion and @phosphor-icons/react immediately.",
+    "Do NOT use 'Inter', 'Roboto', or generic sans-serif fonts. Inject the Google Fonts imports for 'Space Mono' and 'JetBrains Mono' into the global CSS.",
+    "Initialize Shadcn UI and add Select, Switch, and Button components, but strip their default white/light-grey styling. Force dark mode heavily.",
+    "Build the 3-column layout (Sidebar, Main Chat, Right Panel) using Tailwind Grid/Flex. Ensure it is fully responsive (stacking on mobile).",
+    "Implement the 'voice_visualizer' as a Framer Motion component at the top of the chat area, with props for 'idle', 'listening', 'thinking', and 'speaking'.",
+    "The Windows Agent card must use the provided pexels image URL with a strong black overlay so text is readable.",
+    "NEVER use placeholder text or dummy image URLs. Only use the assets provided in this JSON.",
+    "Every button, input, and toggle must have a data-testid attribute."
+  ]
+}
