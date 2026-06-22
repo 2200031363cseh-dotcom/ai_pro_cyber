@@ -3,7 +3,9 @@ import { Terminal, Lightning, Ghost } from '@phosphor-icons/react';
 
 function ToolTag({ name, input, result }) {
   let parsed = result;
-  try { parsed = typeof result === 'string' ? JSON.parse(result) : result; } catch { /* ignore */ }
+  try { parsed = typeof result === 'string' ? JSON.parse(result) : result; } catch (err) {
+    console.warn('[ToolTag] result parse failed:', err);
+  }
   const preview = typeof parsed === 'object' ? JSON.stringify(parsed).slice(0, 140) : String(parsed || '').slice(0, 140);
   return (
     <div className="my-2" data-testid={`tool-call-${name}`}>
@@ -56,7 +58,7 @@ export default function ChatStream({ messages, isThinking }) {
       <AnimatePresence initial={false}>
         {messages.map((m, idx) => (
           <motion.div
-            key={`m-${idx}`}
+            key={m.id || `m-${idx}-${m.role}-${(m.text || '').slice(0, 24)}`}
             layout
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}

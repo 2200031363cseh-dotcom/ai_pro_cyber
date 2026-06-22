@@ -46,17 +46,18 @@ export default function App() {
         const list = s.data.skills || [];
         setSkills(list);
         setEnabledSkills(new Set(list.map((x) => x.name)));
-      } catch (e) { /* ignore */ }
+      } catch (err) { console.warn('[skills] load failed:', err); }
       await refreshFacts();
       await loadHistory(sessionId);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshFacts = useCallback(async () => {
     try {
       const r = await axios.get(`${API}/memory/facts`);
       setFacts(r.data.facts || []);
-    } catch (e) { /* ignore */ }
+    } catch (err) { console.warn('[memory] refresh failed:', err); }
   }, []);
 
   const loadHistory = useCallback(async (sid) => {

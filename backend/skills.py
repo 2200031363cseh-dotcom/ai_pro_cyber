@@ -24,15 +24,44 @@ def get_current_time(timezone_name: str | None = None) -> dict:
     }
 
 
+def _safe_eval(expression: str):
+    """Evaluate a math expression using AST whitelist (no eval, no attribute access)."""
+    import ast, operator as op
+    ops = {
+        ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul, ast.Div: op.truediv,
+        ast.Mod: op.mod, ast.Pow: op.pow, ast.FloorDiv: op.floordiv,
+        ast.USub: op.neg, ast.UAdd: op.pos,
+    }
+    funcs = {k: getattr(math, k) for k in dir(math) if not k.startswith("_") and callable(getattr(math, k))}
+    consts = {k: getattr(math, k) for k in ("pi", "e", "tau", "inf", "nan") if hasattr(math, k)}
+    funcs.update({"abs": abs, "round": round, "min": min, "max": max})
+
+    def _v(node):
+        if isinstance(node, ast.Expression):
+            return _v(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp) and type(node.op) in ops:
+            return ops[type(node.op)](_v(node.left), _v(node.right))
+        if isinstance(node, ast.UnaryOp) and type(node.op) in ops:
+            return ops[type(node.op)](_v(node.operand))
+        if isinstance(node, ast.Name):
+            if node.id in consts:
+                return consts[node.id]
+            raise ValueError(f"unknown name: {node.id}")
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            fn = funcs.get(node.func.id)
+            if not fn:
+                raise ValueError(f"unknown function: {node.func.id}")
+            return fn(*[_v(a) for a in node.args])
+        raise ValueError(f"disallowed expression element: {type(node).__name__}")
+
+    return _v(ast.parse(expression, mode="eval"))
+
+
 def calculate(expression: str) -> dict:
-    allowed = re.fullmatch(r"[0-9\.\+\-\*\/\(\)\s\,a-zA-Z_]+", expression or "")
-    if not allowed:
-        return {"error": "Expression contains disallowed characters."}
-    safe_env = {k: getattr(math, k) for k in dir(math) if not k.startswith("_")}
-    safe_env.update({"abs": abs, "round": round, "min": min, "max": max})
     try:
-        value = eval(expression, {"__builtins__": {}}, safe_env)
-        return {"expression": expression, "result": value}
+        return {"expression": expression, "result": _safe_eval(expression)}
     except Exception as e:
         return {"error": f"Could not evaluate: {e}"}
 

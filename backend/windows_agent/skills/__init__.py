@@ -17,6 +17,7 @@ from pathlib import Path
 
 def confirm(prompt: str) -> bool:
     """Ask the user [y/N] in the terminal. Used inside risky skills."""
+    ans = ""
     try:
         ans = input(f"[CONFIRM] {prompt} [y/N] ").strip().lower()
     except EOFError:
@@ -31,11 +32,43 @@ def get_current_time() -> dict:
     return {"local": now.isoformat(), "tz": str(now.tzinfo)}
 
 
+def _safe_eval(expression: str):
+    import ast, operator as op
+    ops = {
+        ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul, ast.Div: op.truediv,
+        ast.Mod: op.mod, ast.Pow: op.pow, ast.FloorDiv: op.floordiv,
+        ast.USub: op.neg, ast.UAdd: op.pos,
+    }
+    funcs = {k: getattr(math, k) for k in dir(math) if not k.startswith("_") and callable(getattr(math, k))}
+    consts = {k: getattr(math, k) for k in ("pi", "e", "tau", "inf", "nan") if hasattr(math, k)}
+    funcs.update({"abs": abs, "round": round, "min": min, "max": max})
+
+    def _v(node):
+        if isinstance(node, ast.Expression):
+            return _v(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp) and type(node.op) in ops:
+            return ops[type(node.op)](_v(node.left), _v(node.right))
+        if isinstance(node, ast.UnaryOp) and type(node.op) in ops:
+            return ops[type(node.op)](_v(node.operand))
+        if isinstance(node, ast.Name):
+            if node.id in consts:
+                return consts[node.id]
+            raise ValueError(f"unknown name: {node.id}")
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            fn = funcs.get(node.func.id)
+            if not fn:
+                raise ValueError(f"unknown function: {node.func.id}")
+            return fn(*[_v(a) for a in node.args])
+        raise ValueError(f"disallowed expression element: {type(node).__name__}")
+
+    return _v(ast.parse(expression, mode="eval"))
+
+
 def calculate(expression: str) -> dict:
-    safe = {k: getattr(math, k) for k in dir(math) if not k.startswith("_")}
-    safe.update({"abs": abs, "round": round, "min": min, "max": max})
     try:
-        return {"result": eval(expression, {"__builtins__": {}}, safe)}
+        return {"result": _safe_eval(expression)}
     except Exception as e:
         return {"error": str(e)}
 

@@ -169,6 +169,7 @@ async def _chat_with_tools(
 
     response = await chat.send_message_with_tools(UserMessage(text=user_text))
     tool_calls_log: list[dict] = []
+    final_text: str = ""
 
     for _ in range(8):
         if not response.tool_calls:
@@ -178,7 +179,8 @@ async def _chat_with_tools(
             if isinstance(args, str):
                 try:
                     args = json.loads(args)
-                except Exception:
+                except Exception as parse_err:
+                    logger.warning("tool args parse failed: %s", parse_err)
                     args = {}
             result_str = execute_tool(tc.name, args or {}, memory_store=memory)
             tool_calls_log.append({"name": tc.name, "input": args, "result": result_str})
@@ -245,6 +247,7 @@ async def chat_voice(
     with tempfile.NamedTemporaryFile(delete=False, suffix=incoming_ext) as tmp:
         tmp.write(raw)
         tmp_path = tmp.name
+    user_text: str = ""
     try:
         stt = await stt_client.transcribe(file=tmp_path, model="whisper-1", response_format="json")
         user_text = (getattr(stt, "text", None) or (stt.get("text") if isinstance(stt, dict) else "") or "").strip()

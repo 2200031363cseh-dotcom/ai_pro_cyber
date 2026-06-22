@@ -34,9 +34,9 @@ export default function MemoryPanel({ facts, onAdd, onClear }) {
             no memories yet. tell GHOST about you.
           </p>
         )}
-        {facts.map((f, i) => (
+        {facts.map((f) => (
           <div
-            key={i}
+            key={f}
             className="text-[11px] text-white/65 font-mono leading-relaxed px-2 py-1.5 rounded bg-white/[0.02] border border-white/5"
           >
             <span className="text-cyan mr-1">·</span>{f}
