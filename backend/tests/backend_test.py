@@ -62,7 +62,7 @@ def test_skills_list(client):
 def test_clear_facts_before_chat(client):
     r = client.delete(f"{API}/memory/facts", timeout=30)
     assert r.status_code == 200
-    assert r.json().get("cleared") == True
+    assert r.json().get("cleared")
 
 
 # ---------- Chat: simple greeting ----------
@@ -167,7 +167,7 @@ def test_add_fact_empty_rejected(client):
 def test_clear_all_facts(client):
     r = client.delete(f"{API}/memory/facts", timeout=30)
     assert r.status_code == 200
-    assert r.json().get("cleared") == True
+    assert r.json().get("cleared")
     g = client.get(f"{API}/memory/facts", timeout=30)
     assert g.json().get("facts") == []
 
@@ -176,7 +176,7 @@ def test_clear_all_facts(client):
 def test_delete_conversation(client, shared_session_id):
     r = client.delete(f"{API}/conversations/{shared_session_id}", timeout=30)
     assert r.status_code == 200
-    assert r.json().get("cleared") == True
+    assert r.json().get("cleared")
     # Subsequent get should return empty
     g = client.get(f"{API}/conversations/{shared_session_id}", timeout=30)
     assert g.status_code == 200
