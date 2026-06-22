@@ -324,9 +324,12 @@ ALL_TOOLS = [
 # Merge bug-bounty skill pack (lazy import to avoid hard dep if requests missing)
 try:
     from .bug_bounty import BUG_BOUNTY_TOOLS, BUG_BOUNTY_DISPATCH
+    from .bug_bounty_extra import EXTRA_BB_TOOLS, EXTRA_BB_DISPATCH
     ALL_TOOLS.extend(BUG_BOUNTY_TOOLS)
+    ALL_TOOLS.extend(EXTRA_BB_TOOLS)
 except Exception as _bb_err:
     BUG_BOUNTY_DISPATCH = {}
+    EXTRA_BB_DISPATCH = {}
     import sys as _sys
     print(f"(bug-bounty skills disabled: {_bb_err})", file=_sys.stderr)
 
@@ -339,4 +342,5 @@ DISPATCH = {
     "screenshot": screenshot,
     "run_powershell": run_powershell,
     **BUG_BOUNTY_DISPATCH,
+    **EXTRA_BB_DISPATCH,
 }
