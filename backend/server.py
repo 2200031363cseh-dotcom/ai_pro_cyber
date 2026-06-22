@@ -364,7 +364,7 @@ async def download_agent():
     agent_dir = ROOT_DIR / "windows_agent"
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for p in agent_dir.rglob("*"):
-            if p.is_file() and "__pycache__" not in p.parts:
+            if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".log":
                 zf.write(p, arcname=p.relative_to(agent_dir.parent))
     buf.seek(0)
     return StreamingResponse(

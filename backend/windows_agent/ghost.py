@@ -1,7 +1,10 @@
-"""GHOST — local Windows agent. Run with `python ghost.py`.
+"""GHOST — text-only local Windows agent (no private deps).
 
-Conversational loop: read stdin -> Claude (with tool use) -> execute tool ->
-feed result back -> print final answer. Everything is logged to ghost.log.
+Routes Claude through either:
+  • EMERGENT_LLM_KEY (free, OpenAI-compatible proxy), OR
+  • ANTHROPIC_API_KEY (your own).
+
+Run with `python ghost.py`. Logs to ghost.log.
 """
 from __future__ import annotations
 
@@ -11,10 +14,9 @@ import os
 import sys
 from pathlib import Path
 
-from anthropic import Anthropic
 from dotenv import load_dotenv
 
-from skills import ALL_TOOLS, DISPATCH, confirm
+from skills import ALL_TOOLS, DISPATCH
 
 ROOT = Path(__file__).parent
 load_dotenv(ROOT / ".env")
@@ -27,29 +29,43 @@ logging.basicConfig(
 log = logging.getLogger("ghost")
 
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5")
-API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-if not API_KEY or API_KEY.startswith("sk-ant-replace"):
-    print("ERROR: set ANTHROPIC_API_KEY in .env")
-    sys.exit(1)
+EMERGENT_PROXY = "https://integrations.emergentagent.com/llm"
 
-client = Anthropic(api_key=API_KEY)
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "").strip()
+ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+
+if EMERGENT_KEY and not EMERGENT_KEY.startswith("sk-emergent-replace"):
+    BACKEND = "emergent"
+    from openai import OpenAI
+    chat_client = OpenAI(api_key=EMERGENT_KEY, base_url=EMERGENT_PROXY)
+    anthropic_client = None
+elif ANTHROPIC_KEY and not ANTHROPIC_KEY.startswith("sk-ant-replace"):
+    BACKEND = "direct"
+    from anthropic import Anthropic
+    anthropic_client = Anthropic(api_key=ANTHROPIC_KEY)
+    chat_client = None
+else:
+    print("ERROR: set EMERGENT_LLM_KEY or ANTHROPIC_API_KEY in .env")
+    sys.exit(1)
 
 SYSTEM = (
     "You are GHOST, a personal AI assistant running on the user's Windows PC. "
-    "You have real hands: you can open applications, manipulate files, take "
-    "screenshots, and run guarded PowerShell. "
-    "ALWAYS state your plan in one sentence before calling a tool. "
-    "ALWAYS confirm before irreversible actions (delete, overwrite, send). "
-    "Be concise. The user is at a terminal."
+    "You have real hands: open apps, manipulate files, take screenshots, run "
+    "guarded PowerShell. State your plan in one sentence before calling a tool. "
+    "Confirm before irreversible actions. Be concise."
 )
 
 BANNER = r"""
    ▄████  ██░ ██  ▒█████    ██████ ▄▄▄█████▓
   ██▒ ▀█▒▓██░ ██▒▒██▒  ██▒▒██    ▒ ▓  ██▒ ▓▒
  ▒██░▄▄▄░▒██▀▀██░▒██░  ██▒░ ▓██▄   ▒ ▓██░ ▒░
- ░▓█  ██▓░▓█ ░██ ▒██   ██░  ▒   ██▒░ ▓██▓ ░ 
- ░▒▓███▀▒░▓█▒░██▓░ ████▓▒░▒██████▒▒  ▒██▒ ░ 
 """
+
+
+def _openai_tools() -> list:
+    return [{"type": "function", "function": {
+        "name": t["name"], "description": t["description"], "parameters": t["input_schema"]
+    }} for t in ALL_TOOLS]
 
 
 def run_tool(name: str, args: dict) -> str:
@@ -66,64 +82,82 @@ def run_tool(name: str, args: dict) -> str:
     return json.dumps(result, default=str)
 
 
-def chat_loop() -> None:
+def _hop_openai(history: list) -> str:
+    msgs = [{"role": "system", "content": SYSTEM}] + history
+    for _ in range(10):
+        r = chat_client.chat.completions.create(
+            model=MODEL, messages=msgs, tools=_openai_tools(), max_tokens=1024,
+        )
+        msg = r.choices[0].message
+        entry = {"role": "assistant", "content": msg.content or ""}
+        if msg.tool_calls:
+            entry["tool_calls"] = [
+                {"id": tc.id, "type": "function",
+                 "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                for tc in msg.tool_calls
+            ]
+        msgs.append(entry)
+        if not msg.tool_calls:
+            history[:] = [m for m in msgs if m["role"] != "system"]
+            return msg.content or ""
+        for tc in msg.tool_calls:
+            try: args = json.loads(tc.function.arguments or "{}")
+            except Exception: args = {}
+            print(f"  ↳ {tc.function.name}({json.dumps(args)})")
+            msgs.append({"role": "tool", "tool_call_id": tc.id, "content": run_tool(tc.function.name, args)})
+    return ""
+
+
+def _hop_anthropic(history: list) -> str:
+    msgs = list(history)
+    for _ in range(10):
+        r = anthropic_client.messages.create(
+            model=MODEL, max_tokens=1024, system=SYSTEM, tools=ALL_TOOLS, messages=msgs,
+        )
+        blocks = []
+        for b in r.content:
+            if b.type == "text":
+                blocks.append({"type": "text", "text": b.text})
+            elif b.type == "tool_use":
+                blocks.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
+        msgs.append({"role": "assistant", "content": blocks})
+        if r.stop_reason == "tool_use":
+            results = []
+            for b in r.content:
+                if b.type == "tool_use":
+                    print(f"  ↳ {b.name}({json.dumps(b.input)})")
+                    results.append({"type": "tool_result", "tool_use_id": b.id,
+                                    "content": run_tool(b.name, b.input or {})})
+            msgs.append({"role": "user", "content": results})
+            continue
+        history[:] = msgs
+        return "\n".join(b.text for b in r.content if b.type == "text").strip()
+    return ""
+
+
+def main() -> None:
     print(BANNER)
-    print(f"GHOST online. Model: {MODEL}\nType 'exit' to quit.\n")
-    messages: list[dict] = []
+    print(f"GHOST online. Model: {MODEL} · Backend: {BACKEND}")
+    print("Type 'exit' to quit.\n")
+    history: list = []
     while True:
         try:
             user = input("> ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\nbye.")
-            return
-        if not user:
-            continue
-        if user.lower() in {"exit", "quit", ":q"}:
-            return
-        messages.append({"role": "user", "content": user})
+            print("\nbye."); return
+        if not user: continue
+        if user.lower() in {"exit", "quit", ":q"}: return
+        history.append({"role": "user", "content": user})
         log.info("user: %s", user)
-
-        for _ in range(10):
-            resp = client.messages.create(
-                model=MODEL,
-                max_tokens=1024,
-                system=SYSTEM,
-                tools=ALL_TOOLS,
-                messages=messages,
-            )
-            blocks = []
-            for b in resp.content:
-                if b.type == "text":
-                    blocks.append({"type": "text", "text": b.text})
-                elif b.type == "tool_use":
-                    blocks.append({
-                        "type": "tool_use",
-                        "id": b.id,
-                        "name": b.name,
-                        "input": b.input,
-                    })
-            messages.append({"role": "assistant", "content": blocks})
-
-            if resp.stop_reason == "tool_use":
-                results = []
-                for b in resp.content:
-                    if b.type == "tool_use":
-                        print(f"  ↳ {b.name}({json.dumps(b.input)})")
-                        out = run_tool(b.name, b.input or {})
-                        results.append({
-                            "type": "tool_result",
-                            "tool_use_id": b.id,
-                            "content": out,
-                        })
-                messages.append({"role": "user", "content": results})
-                continue
-
-            text = "\n".join(b.text for b in resp.content if b.type == "text").strip()
-            if text:
-                print(f"\nGHOST: {text}\n")
-                log.info("assistant: %s", text)
-            break
+        try:
+            reply = _hop_openai(history) if BACKEND == "emergent" else _hop_anthropic(history)
+        except Exception as e:
+            log.exception("LLM error")
+            print(f"⚠ {e}\n"); continue
+        if reply:
+            print(f"\nGHOST: {reply}\n")
+            log.info("assistant: %s", reply)
 
 
 if __name__ == "__main__":
-    chat_loop()
+    main()

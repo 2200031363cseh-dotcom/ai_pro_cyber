@@ -1,11 +1,14 @@
-"""GHOST — voice-enabled local Windows agent.
+"""GHOST — voice-enabled local Windows agent (no private deps).
+
+Uses the standard `openai` Python SDK against ANY OpenAI-compatible endpoint:
+  • Emergent proxy (free with EMERGENT_LLM_KEY)   → covers Claude + Whisper + TTS
+  • OR direct OpenAI                              → if user sets OPENAI_API_KEY
+  • For direct Claude, the `anthropic` SDK is used with ANTHROPIC_API_KEY
 
 Push-to-talk loop:
-  • Type `v` + Enter → speak → it auto-stops on ~1.5s silence (or 15s max).
+  • Type `v` + Enter → speak → auto-stops on ~1.5s silence (or 15s max).
   • Or just type your message and press Enter for text mode.
   • Type `exit` to quit.
-
-Everything else (Claude + real PC skills) is identical to ghost.py.
 """
 from __future__ import annotations
 
@@ -16,13 +19,13 @@ import logging
 import os
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
 from dotenv import load_dotenv
+from openai import OpenAI
 
 from skills import ALL_TOOLS, DISPATCH
 
@@ -36,44 +39,34 @@ logging.basicConfig(
 )
 log = logging.getLogger("ghost")
 
-# ---- API setup ----------------------------------------------------------
+# ---- Config -------------------------------------------------------------
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5")
 VOICE = os.environ.get("TTS_VOICE", "nova")
+EMERGENT_PROXY = "https://integrations.emergentagent.com/llm"
 
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "").strip()
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 OPENAI_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
-EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "").strip()
 
-USE_EMERGENT = bool(EMERGENT_KEY) and not (
-    ANTHROPIC_KEY and OPENAI_KEY and not ANTHROPIC_KEY.startswith("sk-ant-replace")
-)
-
-if USE_EMERGENT:
-    try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
-        from emergentintegrations.llm.openai.speech_to_text import OpenAISpeechToText
-        from emergentintegrations.llm.openai.text_to_speech import OpenAITextToSpeech
-    except ImportError:
-        print("ERROR: emergentintegrations is not installed.")
-        print("Two options:")
-        print(" 1) Install it:  pip install --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ emergentintegrations")
-        print(" 2) OR edit .env: comment out EMERGENT_LLM_KEY and fill in ANTHROPIC_API_KEY + OPENAI_API_KEY")
-        sys.exit(1)
-    stt_client = OpenAISpeechToText(api_key=EMERGENT_KEY)
-    tts_client = OpenAITextToSpeech(api_key=EMERGENT_KEY)
+# Decide routing
+if EMERGENT_KEY and not EMERGENT_KEY.startswith("sk-emergent-replace"):
+    BACKEND = "emergent"
+    chat_client = OpenAI(api_key=EMERGENT_KEY, base_url=EMERGENT_PROXY)
+    audio_client = chat_client
     anthropic_client = None
-    openai_client = None
-else:
-    from anthropic import Anthropic
-    from openai import OpenAI
-    if not ANTHROPIC_KEY or ANTHROPIC_KEY.startswith("sk-ant-replace"):
-        print("ERROR: set ANTHROPIC_API_KEY (or EMERGENT_LLM_KEY) in .env")
-        sys.exit(1)
-    if not OPENAI_KEY:
-        print("ERROR: set OPENAI_API_KEY (or EMERGENT_LLM_KEY) in .env for voice")
+elif ANTHROPIC_KEY and OPENAI_KEY and not ANTHROPIC_KEY.startswith("sk-ant-replace"):
+    BACKEND = "direct"
+    try:
+        from anthropic import Anthropic
+    except ImportError:
+        print("ERROR: anthropic package not installed. Run: pip install anthropic")
         sys.exit(1)
     anthropic_client = Anthropic(api_key=ANTHROPIC_KEY)
-    openai_client = OpenAI(api_key=OPENAI_KEY)
+    chat_client = None
+    audio_client = OpenAI(api_key=OPENAI_KEY)
+else:
+    print("ERROR: configure .env with either EMERGENT_LLM_KEY, OR both ANTHROPIC_API_KEY + OPENAI_API_KEY.")
+    sys.exit(1)
 
 SYSTEM = (
     "You are GHOST, a personal AI assistant running on the user's Windows PC. "
@@ -92,11 +85,10 @@ BANNER = r"""
 """
 
 # ---- Audio I/O ----------------------------------------------------------
-SAMPLE_RATE = 16000  # Whisper happy at 16k
+SAMPLE_RATE = 16000
 
 def record_until_silence(max_seconds: float = 15.0, silence_seconds: float = 1.5,
                          silence_rms: float = 0.012) -> str:
-    """Record from default mic until ~silence_seconds of quiet (or max). Returns wav path."""
     print("🎙  listening… (auto-stops on silence)")
     block = 1024
     silence_blocks_needed = int(silence_seconds * SAMPLE_RATE / block)
@@ -127,44 +119,37 @@ def record_until_silence(max_seconds: float = 15.0, silence_seconds: float = 1.5
 
 
 def play_audio_bytes(data: bytes) -> None:
-    """Play mp3 (or wav) bytes via sounddevice. Decodes via soundfile."""
+    """Play mp3/wav bytes. Tries soundfile decode; falls back to default media player."""
     buf = io.BytesIO(data)
     try:
         audio, sr = sf.read(buf, dtype="float32")
-    except Exception:
-        # If soundfile can't decode mp3 (no libsndfile mp3 support), write to temp and use winsound
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
-            f.write(data)
-            path = f.name
-        if sys.platform == "win32":
-            os.startfile(path)  # opens in default media player
-        else:
-            print(f"(audio saved to {path})")
+        sd.play(audio, sr)
+        sd.wait()
         return
-    sd.play(audio, sr)
-    sd.wait()
+    except Exception:
+        pass
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
+        f.write(data)
+        path = f.name
+    if sys.platform == "win32":
+        os.startfile(path)
+    else:
+        print(f"(audio saved to {path})")
 
 
-# ---- LLM + voice calls --------------------------------------------------
-async def speech_to_text(wav_path: str) -> str:
-    if USE_EMERGENT:
-        r = await stt_client.transcribe(file=wav_path, model="whisper-1", response_format="json")
-        return (getattr(r, "text", None) or (r.get("text") if isinstance(r, dict) else "") or "").strip()
+# ---- Voice (Whisper STT + OpenAI TTS) ----------------------------------
+def speech_to_text(wav_path: str) -> str:
     with open(wav_path, "rb") as f:
-        r = openai_client.audio.transcriptions.create(model="whisper-1", file=f)
+        r = audio_client.audio.transcriptions.create(model="whisper-1", file=f)
     return (r.text or "").strip()
 
 
-async def text_to_speech(text: str) -> bytes:
-    if USE_EMERGENT:
-        return await tts_client.generate_speech(
-            text=text[:4000], model="tts-1", voice=VOICE, response_format="mp3",
-        )
-    r = openai_client.audio.speech.create(model="tts-1", voice=VOICE, input=text[:4000])
+def text_to_speech(text: str) -> bytes:
+    r = audio_client.audio.speech.create(model="tts-1", voice=VOICE, input=text[:4000])
     return r.content
 
 
-# ---- Tool execution -----------------------------------------------------
+# ---- Tools --------------------------------------------------------------
 def run_tool(name: str, args: dict) -> str:
     fn = DISPATCH.get(name)
     if not fn:
@@ -179,12 +164,7 @@ def run_tool(name: str, args: dict) -> str:
     return json.dumps(result, default=str)
 
 
-# ---- Claude tool-use loop (handles both code paths) ---------------------
-def _anthropic_tools():
-    return ALL_TOOLS  # already in Anthropic format
-
-
-def _openai_tools():
+def _openai_tools() -> list:
     return [
         {"type": "function", "function": {
             "name": t["name"], "description": t["description"], "parameters": t["input_schema"]
@@ -192,43 +172,57 @@ def _openai_tools():
     ]
 
 
-async def think_and_act(user_text: str, history: list) -> str:
+# ---- Claude tool-use loop ----------------------------------------------
+def think_and_act(user_text: str, history: list) -> str:
     history.append({"role": "user", "content": user_text})
 
-    if USE_EMERGENT:
-        chat = LlmChat(
-            api_key=EMERGENT_KEY,
-            session_id="ghost-desktop",
-            system_message=SYSTEM,
-            initial_messages=history[:-1] or None,
-        ).with_model("anthropic", MODEL).with_tools(_openai_tools())
-        resp = await chat.send_message_with_tools(UserMessage(text=user_text))
-        for _ in range(8):
-            if not resp.tool_calls:
-                break
-            for tc in resp.tool_calls:
-                args = tc.arguments
-                if isinstance(args, str):
-                    try: args = json.loads(args)
-                    except Exception: args = {}
-                print(f"  ↳ {tc.name}({json.dumps(args)})")
-                out = run_tool(tc.name, args or {})
-                chat.add_tool_result(tc.id, out)
-            resp = await chat.send_message_with_tools()
-        text = resp.content or ""
-        # rebuild history from chat
-        history.clear()
-        history.extend(await chat.get_messages())
-        # strip system from history we keep locally
-        history[:] = [m for m in history if m.get("role") != "system"]
-        return text
+    if BACKEND == "emergent":
+        return _loop_openai_compatible(history)
+    return _loop_anthropic_native(history)
 
-    # Direct Anthropic path
+
+def _loop_openai_compatible(history: list) -> str:
+    msgs = [{"role": "system", "content": SYSTEM}] + history
+    for _ in range(8):
+        r = chat_client.chat.completions.create(
+            model=MODEL,
+            messages=msgs,
+            tools=_openai_tools(),
+            max_tokens=1024,
+        )
+        msg = r.choices[0].message
+        assistant_entry = {"role": "assistant", "content": msg.content or ""}
+        if msg.tool_calls:
+            assistant_entry["tool_calls"] = [
+                {"id": tc.id, "type": "function",
+                 "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                for tc in msg.tool_calls
+            ]
+        msgs.append(assistant_entry)
+
+        if not msg.tool_calls:
+            text = msg.content or ""
+            history[:] = [m for m in msgs if m.get("role") != "system"]
+            return text
+
+        for tc in msg.tool_calls:
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except Exception:
+                args = {}
+            print(f"  ↳ {tc.function.name}({json.dumps(args)})")
+            out = run_tool(tc.function.name, args)
+            msgs.append({"role": "tool", "tool_call_id": tc.id, "content": out})
+    history[:] = [m for m in msgs if m.get("role") != "system"]
+    return ""
+
+
+def _loop_anthropic_native(history: list) -> str:
     msgs = list(history)
     for _ in range(8):
         r = anthropic_client.messages.create(
             model=MODEL, max_tokens=1024, system=SYSTEM,
-            tools=_anthropic_tools(), messages=msgs,
+            tools=ALL_TOOLS, messages=msgs,
         )
         blocks = []
         for b in r.content:
@@ -247,16 +241,16 @@ async def think_and_act(user_text: str, history: list) -> str:
             msgs.append({"role": "user", "content": results})
             continue
         text = "\n".join(b.text for b in r.content if b.type == "text").strip()
-        history.clear(); history.extend(msgs)
+        history[:] = msgs
         return text
     return ""
 
 
 # ---- Main loop ----------------------------------------------------------
-async def main() -> None:
+def main() -> None:
     print(BANNER)
     print(f"GHOST voice agent online · model: {MODEL} · voice: {VOICE}")
-    print(f"Backend: {'Emergent LLM key' if USE_EMERGENT else 'direct Anthropic + OpenAI'}\n")
+    print(f"Backend: {BACKEND}\n")
     print("Type your message, or `v` to speak. `exit` to quit.\n")
     history: list = []
 
@@ -273,7 +267,7 @@ async def main() -> None:
         if cmd.lower() == "v":
             wav = record_until_silence()
             try:
-                user_text = await speech_to_text(wav)
+                user_text = speech_to_text(wav)
             finally:
                 try: os.remove(wav)
                 except OSError: pass
@@ -285,7 +279,7 @@ async def main() -> None:
 
         log.info("user: %s", user_text)
         try:
-            reply = await think_and_act(user_text, history)
+            reply = think_and_act(user_text, history)
         except Exception as e:
             log.exception("LLM error")
             print(f"⚠ {e}\n"); continue
@@ -294,11 +288,11 @@ async def main() -> None:
             print(f"\nGHOST: {reply}\n")
             log.info("assistant: %s", reply)
             try:
-                audio = await text_to_speech(reply)
+                audio = text_to_speech(reply)
                 play_audio_bytes(audio)
             except Exception as e:
                 log.warning("TTS failed: %s", e)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
